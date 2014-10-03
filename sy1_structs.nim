@@ -1,6 +1,10 @@
-import math,tables,strutils,ml_utils,zipfiles
+import math,tables,strutils,ml_utils,zipfiles,os    
 
 type
+    TTextFileType* = enum
+        ftWindows,
+        ftUnix
+
     PSyParam* =  ref TSyParam
     TSyParam* =  object of TObject
         Description* : string
@@ -23,16 +27,20 @@ type
         Deviation*: float
         Genetic*: bool
         Impact* : int
+        Directory* : string
+
 
     TPatchCode* = range[0..128]
 
     PPatchset* = ref TPatchset
     TPatchset* = object of TObject
+        Name* : string
         Directory*  : string
         Percentage* : float
         Genetic* : bool
         Patches*: seq[PSyPatch]
         Impact*:  int
+        FullRandom* : bool
 
 
 
@@ -40,6 +48,11 @@ var colors= ["cyan", "red", "green", "blue", "yellow", "magenta"]
 var vow = ["a","e","i","o","u","y"]
 var con = ["b","c","d","f","g","k","l","m","n","p","r","s","t","v","x","z"]
 
+var TextFileType* : TTextFileType = ftWindows
+
+proc newLine* () : string = 
+    var s: string; s = if TextFileType == ftWindows:  "\r\n" else : "\n"
+    result = s
 
 ## ---------------------------------------
 ## SyParam methods
@@ -47,7 +60,7 @@ var con = ["b","c","d","f","g","k","l","m","n","p","r","s","t","v","x","z"]
 
 proc initWithDefaultParam* () : TTable[int,PSyParam] 
 
-proc getColor* () : string =  colors[random(colors.len)]
+proc getColor* () : string =  "color=" & colors[random(colors.len)]
 proc getVer*  () : string = "ver=108"
 
 proc word* () : string = 
@@ -119,7 +132,7 @@ proc newSyPatch* () : PSyPatch =
     new(p)
     p.Description = word()
     p.Version = getVer()
-    p.Color = getColor()
+    p.Color = "color=" & getColor()
     p.Params = initWithDefaultParam()
     p.Percentage = -1.0
     p.Genetic = false
@@ -132,15 +145,26 @@ proc generateRandomPatch* (p: PSyPatch) =
        pa.randomizeParam(p.Genetic)
 
 proc generateParametricPatch* (p: PSyPatch) = 
-    for k in p.Params.keys:
-        var pa = p.Params[k]
-        pa.deviation (p.percentage)
+    if p.impact > 0:
+        var s:seq[int]; s = @[]
+        for k in p.Params.keys:
+            s.add(k)
+        shuffle(s)
+        for w in 0..p.impact:
+            var new_k = s[w]
+            var pa = p.Params[new_k]
+            echo "Impacting", new_k
+            pa.deviation(p.percentage)
+    else:
+        for k in p.Params.keys:
+            var pa = p.Params[k]
+            pa.deviation (p.percentage)
 
 proc generatePatchText*(p: PSyPatch) : string =  
-    var sbuf = p.Description & "\n" & p.Version & "\n" & p.Color & "\n"
+    var sbuf = p.Description & newLine()  & p.Version & newLine() & p.Color & newLine()
     for  k in p.Params.keys:
         var pa = p.Params[k]
-        sbuf = sbuf & pa.paramString() & "\n"
+        sbuf = sbuf & pa.paramString() & newLine()
     return sbuf
     
 
@@ -153,9 +177,9 @@ proc patchFileName * (i : int) : string =
     return fp & ".sy1"
  
 
-proc generatePatchFile* (p:PsyPatch, index: TPatchCode, filePath : string = "./")  : string {.discardable.} =  
+proc generatePatchFile* (p:PsyPatch, index: TPatchCode, )  : string {.discardable.} =  
     var fp = patchFileName(index)
-    var fullPath = filePath & fp
+    var fullPath = p.Directory & fp
     withFile(txt, fullPath, fmWrite):
         txt.write(p.generatePatchText)
     return fp
@@ -163,26 +187,49 @@ proc generatePatchFile* (p:PsyPatch, index: TPatchCode, filePath : string = "./"
 proc newPatchset* () : PPatchset =
     var p : PPatchset 
     new (p)
-    p.directory = "./"
+    p.directory = "." & os.DirSep
     p.percentage = 0.5
     p.genetic = false
     p.patches = @[]
+    p.name = word()
+    p.impact = -1
     for w in 0..128:
         var pa = newSyPatch()
         p.patches.add(pa)
     return p
 
+proc `$`*(p:PPatchset) : string =
+    result = p.Name & " (Dir: " & p.Directory & ", Perc:" & $(p.Percentage) & ", Genetic:" & $(p.Genetic) & ", Impact:" & $(p.Impact) & ", Fullrandom=" & $(p.Fullrandom) & ")"
+
+proc updateValues* (p: PPatchset)=
+    for pa in p.patches:
+        pa.directory = p.directory & os.DirSep
+        pa.percentage = p.percentage
+        pa.genetic = p.genetic
+        pa.impact = p.impact
+        pa.description = word()
+
 proc generateZip* (p: PPatchset, filename : string) = 
     var z: TZipArchive
-    var zipFileName =  p.directory &  filename
+    var zipFileName =  p.directory &  os.DirSep & filename
+    var fileToDelete : seq[string]
+    
+    fileToDelete = @[]
+    echo "Creating zip in ", zipFileName
     if z.open (zipFileName, fmWrite):
         for l in 0..p.patches.len-1:
             var patch = p.patches[l]
-            patch.generateRandomPatch()
+            if (p.fullrandom):
+                patch.generateRandomPatch()
+            else:
+                patch.generateParametricPatch()
             var fp = patch.generatePatchFile(l)
-            echo "Generated patch " & fp
-            z.addFile(fp,p.directory &  fp)
+            z.addFile(fp,p.directory &  os.DirSep & fp)
+            fileToDelete.add(p.directory &  os.DirSep & fp)
         z.close()
+        for f in fileToDelete:
+            removeFile(f)
+            
     else:
         echo "Error creating zip file ", zipFileName
 
