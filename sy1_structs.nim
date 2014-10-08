@@ -28,6 +28,7 @@ type
         Genetic*: bool
         Impact* : int
         Directory* : string
+        Patchset* : PPatchSet
 
 
     TPatchCode* = range[0..128]
@@ -41,6 +42,8 @@ type
         Patches*: seq[PSyPatch]
         Impact*:  int
         FullRandom* : bool
+        DefaultPatch* : PSyPatch
+        MorphPatch*  : PSyPatch
 
 
 
@@ -58,7 +61,7 @@ proc newLine* () : string =
 ## SyParam methods
 ## ---------------------------------------
 
-proc initWithDefaultParam* () : TTable[int,PSyParam] 
+proc initWithDefaultParam* (filename : string = "") : TTable[int,PSyParam] 
 
 proc getColor* () : string =  "color=" & colors[random(colors.len)]
 proc getVer*  () : string = "ver=108"
@@ -96,9 +99,12 @@ proc randomizeParam* (p: PSyParam, genetic: bool = false) =
     of 9: p.current = 0
     of 29: p.current = 100
     else:
-        var d = p.vmax -p.vmin
-        var h = p.vmin + random(d+1)
-        p.current = h
+        if p.vmax > 1:
+            var d = p.vmax -p.vmin
+            var h = p.vmin + random(d+1)
+            p.current = h
+        else:
+            p.current = random(100) mod 2
     if genetic:
         p.default = p.current 
  
@@ -121,19 +127,24 @@ proc deviation* (p: PSyParam , percentage : float = 0.5,  genetic : bool = false
                 res = p.vmin + p.default + rng
             p.current = res
         else:
-            if random(100) < cast[int](percentage*100):
+            var v1: float = percentage*100.0
+            var v2 = round(v1)
+            if random(100) < v2:
                 p.randomizeParam(genetic)
     if genetic:
         p.default = p.current
 
 
-proc newSyPatch* () : PSyPatch = 
+proc newSyPatch* (filename : string = "") : PSyPatch = 
+    if (filename != ""):
+        echo "Initializing with ",filename
+        
     var p : PSyPatch
     new(p)
     p.Description = word()
     p.Version = getVer()
-    p.Color = "color=" & getColor()
-    p.Params = initWithDefaultParam()
+    p.Color =  getColor()
+    p.Params = initWithDefaultParam( filename)
     p.Percentage = -1.0
     p.Genetic = false
     return p
@@ -144,6 +155,15 @@ proc generateRandomPatch* (p: PSyPatch) =
        var pa = p.Params[k]
        pa.randomizeParam(p.Genetic)
 
+proc copyPatchValues* (p : PSyPatch, pDest : PSyPatch) = 
+    for k in p.Params.Keys:
+        var pa = p.Params[k]
+        if (pDest.Params.hasKey(k)):
+            pDest.Params[k].default = pa.default
+            pDest.Params[k].current = pa.current
+        
+
+
 proc generateParametricPatch* (p: PSyPatch) = 
     if p.impact > 0:
         var s:seq[int]; s = @[]
@@ -153,7 +173,7 @@ proc generateParametricPatch* (p: PSyPatch) =
         for w in 0..p.impact:
             var new_k = s[w]
             var pa = p.Params[new_k]
-            echo "Impacting", new_k
+            # echo "Impacting", new_k
             pa.deviation(p.percentage)
     else:
         for k in p.Params.keys:
@@ -161,7 +181,7 @@ proc generateParametricPatch* (p: PSyPatch) =
             pa.deviation (p.percentage)
 
 proc generatePatchText*(p: PSyPatch) : string =  
-    var sbuf = p.Description & newLine()  & p.Version & newLine() & p.Color & newLine()
+    var sbuf = p.Description & newLine()   & p.Color & newLine() & p.Version & newLine()
     for  k in p.Params.keys:
         var pa = p.Params[k]
         sbuf = sbuf & pa.paramString() & newLine()
@@ -184,8 +204,10 @@ proc generatePatchFile* (p:PsyPatch, index: TPatchCode, )  : string {.discardabl
         txt.write(p.generatePatchText)
     return fp
 
-proc newPatchset* () : PPatchset =
+proc newPatchset* (filename : string = "") : PPatchset =
     var p : PPatchset 
+    if (filename != ""):
+        echo "Initializing patchset with ", filename
     new (p)
     p.directory = "." & os.DirSep
     p.percentage = 0.5
@@ -193,13 +215,47 @@ proc newPatchset* () : PPatchset =
     p.patches = @[]
     p.name = word()
     p.impact = -1
+    p.DefaultPatch = newSyPatch(filename)
     for w in 0..128:
         var pa = newSyPatch()
+        pa.PatchSet = p
+        CopyPatchValues(p.DefaultPatch,pa)
         p.patches.add(pa)
     return p
 
 proc `$`*(p:PPatchset) : string =
     result = p.Name & " (Dir: " & p.Directory & ", Perc:" & $(p.Percentage) & ", Genetic:" & $(p.Genetic) & ", Impact:" & $(p.Impact) & ", Fullrandom=" & $(p.Fullrandom) & ")"
+
+        
+proc createMorphing* (p: PPatchset, steps : int = 24) = 
+    var s : seq[int] = @[]
+    var dict = initTable[int, float]()
+    var flSteps = toFloat(steps)
+    var flVal : float
+    var curDif : float
+    var p1 : PSyParam
+    var p2 : PSyParam
+    ## var pDest = PSyPatch
+    var k : int
+    for k in p.DefaultPatch.Params.Keys:
+        s.Add(k)
+    for k in s:
+        p1 = p.DefaultPatch.Params[k]
+        if (p.MorphPatch.Params.HasKey(k)):
+            p2 = p.MorphPatch.Params[k]
+            curDif = toFloat(p2.Current - p1.Current)/24.0
+            echo "curDif is ", curDif
+            dict[k] = curDif
+    for st in 0..steps+2:
+        var pDest = p.Patches[st]
+        for k in  dict.keys:
+            if pDest.Params.HasKey(k):
+                flVal = toFloat(p.DefaultPatch.Params[k].current) + dict[k]*toFloat(st)
+                if (k == 60):
+                    echo "flVal for k ",k ," is " , flVal
+                pDest.Params[k].current = Math.round(flVal)
+                
+                
 
 proc updateValues* (p: PPatchset)=
     for pa in p.patches:
@@ -208,6 +264,15 @@ proc updateValues* (p: PPatchset)=
         pa.genetic = p.genetic
         pa.impact = p.impact
         pa.description = word()
+        
+proc generatePatches* (p: PPatchset) = 
+    for l in 0..p.patches.len-1:
+        var patch = p.patches[l]
+        if (p.fullrandom):
+            patch.generateRandomPatch()
+        else:
+            patch.generateParametricPatch()
+        
 
 proc generateZip* (p: PPatchset, filename : string) = 
     var z: TZipArchive
@@ -219,10 +284,6 @@ proc generateZip* (p: PPatchset, filename : string) =
     if z.open (zipFileName, fmWrite):
         for l in 0..p.patches.len-1:
             var patch = p.patches[l]
-            if (p.fullrandom):
-                patch.generateRandomPatch()
-            else:
-                patch.generateParametricPatch()
             var fp = patch.generatePatchFile(l)
             z.addFile(fp,p.directory &  os.DirSep & fp)
             fileToDelete.add(p.directory &  os.DirSep & fp)
@@ -339,7 +400,7 @@ ver=112
 70,0"""
 
 
-proc initWithDefaultParam* () : TTable[int,PSyParam]  = 
+proc initWithDefaultParam* (filename : string = "") : TTable[int,PSyParam]  = 
     var dict = initTable[int, PSyParam]()
     dict[0] = newSyParam ( Index=0, VMin=0, Vmax=3, Description="OSCILLATOR 1 WAVE" )
     dict[45] = newSyParam ( Index=45, VMin=0, Vmax=127, Description="FM" )
@@ -429,21 +490,53 @@ proc initWithDefaultParam* () : TTable[int,PSyParam]  =
     dict[69] = newSyParam ( Index=69, VMin=0, Vmax=1, Description="TEMPO SYNC" )
     dict[70] = newSyParam ( Index=70, VMin=0, Vmax=1, Description="KEY SYNC" )
    
-    var sy_lines = splitLines(DEFAULT_DATA)
-    for h in 3..sy_lines.len-1:
-        var line = strip(sy_lines[h])
+    if (filename != ""):
         try:
-            var tokens = line.split(',')
-            var i_key = parseInt(tokens[0])
-            var i_value = parseInt(tokens[1])
-            if dict.hasKey(i_key):
-                dict[i_key].default = i_value; dict[i_key].current = i_value
+            var sData = ""
+            echo ("Initializing with " & filename)
+            withFile (txt,filename, fmRead):
+                sData = txt.readAll()
+                #echo("Read all data ")
+                var sy_lines = splitLines(sData)
+                #echo("Split lines")
+                for h in 3..sy_lines.len-1:
+                    #echo "Reading... ", h
+                    block protection:
+                        var line = strip(sy_lines[h])
+                        try:
+                            echo "Line: ", line
+                            var tokens = line.split(',')
+                            #echo "Tokens: ", tokens
+                            if tokens.len > 0:
+                                var i_key = parseInt(tokens[0])
+                                var i_value = parseInt(tokens[1])
+                                echo "Setting value ", i_value, " to key ", i_key
+                                if dict.hasKey(i_key):
+                                    dict[i_key].default = i_value; dict[i_key].current = i_value
+                        except:
+                            echo "Error reading line: ", line
+        except:
+            let
+                e = getCurrentException()
+                m = getCurrentExceptionMsg()
+            echo "Error reading from file ", repr(e), "\nMessage: ",m,"\n----------------------------\n"
+        
+    else:
+        var sy_lines = splitLines(DEFAULT_DATA)
+        for h in 3..sy_lines.len-1:
+            var line = strip(sy_lines[h])
+            try:
+                var tokens = line.split(',')
+                var i_key = parseInt(tokens[0])
+                var i_value = parseInt(tokens[1])
+                if dict.hasKey(i_key):
+                    dict[i_key].default = i_value; dict[i_key].current = i_value
 
-        except  EInvalidIndex:
-                echo repr(getCurrentException())
+            except  EInvalidIndex:
+                    echo "Error reading default data:\n",repr(getCurrentException())
 
     result =  dict
 
 
-let defaultParams* = initWithDefaultParam()
+var defaultParams* = initWithDefaultParam()
 
