@@ -1,7 +1,7 @@
+{.passL: "-lz" .}
+
 import sy1_structs, tables,math, parseOpt2, strutils
 
-when defined(windows):
-    {.passL: "-LC:/opt/nim32/dist/mingw/i686-w64-mingw32/lib -lz".}
 
 randomize()
 
@@ -72,19 +72,19 @@ try:
     if not showHelp:
         echo "Filename is ", initFilename
         p = newPatchset(initFileName) 
-        p.name = name
-        p.impact = impact
-        p.directory = directory
-        p.genetic = genetic
-        p.fullrandom = fullrandom
-        p.impact = impact
-        p.percentage = percentage
+        p.Name = name
+        p.Impact = impact
+        p.Directory = directory
+        p.Genetic = genetic
+        p.Fullrandom = fullrandom
+        p.Impact = impact
+        p.Percentage = percentage
 
         p.updateValues()
         p.generatePatches()
         if morphFileName != "":
             p.MorphPatch = newSyPatch(morphFileName);
-            p.CreateMorphing (morphSteps)
+            p.createMorphing (morphSteps)
         echo "Generating patchset:\n",p,"\n\n"
         p.generateZip(name & ".zip")
         echo "\n\nThat's all!"

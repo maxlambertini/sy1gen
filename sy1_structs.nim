@@ -82,13 +82,13 @@ proc word* () : string =
     gu =  if x mod 2 == 0 : toUpper(con[random(con.len)]) else : toUpper(vow[random(vow.len)])
     result = gu & s
 
-proc newSyParam* (index: int, vmin: int, vmax: int, Description: string) : PSyParam = 
-    var p = PSyParam (Description: description,
-        Index:index, 
-        VMin:vmin,
-        Vmax:vmax,
-        default : vmin,
-        current : vmin)
+proc newSyParam* (Index: int, Vmin: int, Vmax: int, Description: string) : PSyParam = 
+    var p = PSyParam (Description: Description,
+        index:Index, 
+        vmin:Vmin,
+        vmax:Vmax,
+        default : Vmin,
+        current : Vmin)
     result = p
 
 proc `$`* (p: PSyParam) : string = 
@@ -155,8 +155,8 @@ proc generateRandomPatch* (p: PSyPatch) =
        var pa = p.Params[k]
        pa.randomizeParam(p.Genetic)
 
-proc copyPatchValues* (p : PSyPatch, pDest : PSyPatch) = 
-    for k in p.Params.Keys:
+proc CopyPatchValues* (p : PSyPatch, pDest : PSyPatch) = 
+    for k in p.Params.keys:
         var pa = p.Params[k]
         if (pDest.Params.hasKey(k)):
             pDest.Params[k].default = pa.default
@@ -165,20 +165,20 @@ proc copyPatchValues* (p : PSyPatch, pDest : PSyPatch) =
 
 
 proc generateParametricPatch* (p: PSyPatch) = 
-    if p.impact > 0:
+    if p.Impact > 0:
         var s:seq[int]; s = @[]
         for k in p.Params.keys:
             s.add(k)
         shuffle(s)
-        for w in 0..p.impact:
+        for w in 0..p.Impact:
             var new_k = s[w]
             var pa = p.Params[new_k]
             # echo "Impacting", new_k
-            pa.deviation(p.percentage)
+            pa.deviation(p.Percentage)
     else:
         for k in p.Params.keys:
             var pa = p.Params[k]
-            pa.deviation (p.percentage)
+            pa.deviation (p.Percentage)
 
 proc generatePatchText*(p: PSyPatch) : string =  
     var sbuf = p.Description & newLine()   & p.Color & newLine() & p.Version & newLine()
@@ -209,18 +209,18 @@ proc newPatchset* (filename : string = "") : PPatchset =
     if (filename != ""):
         echo "Initializing patchset with ", filename
     new (p)
-    p.directory = "." & os.DirSep
-    p.percentage = 0.5
-    p.genetic = false
-    p.patches = @[]
-    p.name = word()
-    p.impact = -1
+    p.Directory = "." & os.DirSep
+    p.Percentage = 0.5
+    p.Genetic = false
+    p.Patches = @[]
+    p.Name = word()
+    p.Impact = -1
     p.DefaultPatch = newSyPatch(filename)
     for w in 0..128:
         var pa = newSyPatch()
         pa.PatchSet = p
         CopyPatchValues(p.DefaultPatch,pa)
-        p.patches.add(pa)
+        p.Patches.add(pa)
     return p
 
 proc `$`*(p:PPatchset) : string =
@@ -237,38 +237,38 @@ proc createMorphing* (p: PPatchset, steps : int = 24) =
     var p2 : PSyParam
     ## var pDest = PSyPatch
     var k : int
-    for k in p.DefaultPatch.Params.Keys:
-        s.Add(k)
+    for k in p.DefaultPatch.Params.keys:
+        s.add(k)
     for k in s:
         p1 = p.DefaultPatch.Params[k]
-        if (p.MorphPatch.Params.HasKey(k)):
+        if (p.MorphPatch.Params.hasKey(k)):
             p2 = p.MorphPatch.Params[k]
-            curDif = toFloat(p2.Current - p1.Current)/24.0
+            curDif = toFloat(p2.current - p1.current)/24.0
             echo "curDif is ", curDif
             dict[k] = curDif
     for st in 0..steps+2:
         var pDest = p.Patches[st]
         for k in  dict.keys:
-            if pDest.Params.HasKey(k):
+            if pDest.Params.hasKey(k):
                 flVal = toFloat(p.DefaultPatch.Params[k].current) + dict[k]*toFloat(st)
                 if (k == 60):
                     echo "flVal for k ",k ," is " , flVal
-                pDest.Params[k].current = Math.round(flVal)
+                pDest.Params[k].current = math.round(flVal)
                 
                 
 
 proc updateValues* (p: PPatchset)=
-    for pa in p.patches:
-        pa.directory = p.directory & os.DirSep
-        pa.percentage = p.percentage
-        pa.genetic = p.genetic
-        pa.impact = p.impact
-        pa.description = word()
+    for pa in p.Patches:
+        pa.Directory = p.Directory & os.DirSep
+        pa.Percentage = p.Percentage
+        pa.Genetic = p.Genetic
+        pa.Impact = p.Impact
+        pa.Description = word()
         
 proc generatePatches* (p: PPatchset) = 
-    for l in 0..p.patches.len-1:
-        var patch = p.patches[l]
-        if (p.fullrandom):
+    for l in 0..p.Patches.len-1:
+        var patch = p.Patches[l]
+        if (p.FullRandom):
             patch.generateRandomPatch()
         else:
             patch.generateParametricPatch()
@@ -276,17 +276,17 @@ proc generatePatches* (p: PPatchset) =
 
 proc generateZip* (p: PPatchset, filename : string) = 
     var z: TZipArchive
-    var zipFileName =  p.directory &  os.DirSep & filename
+    var zipFileName =  p.Directory &  os.DirSep & filename
     var fileToDelete : seq[string]
     
     fileToDelete = @[]
     echo "Creating zip in ", zipFileName
     if z.open (zipFileName, fmWrite):
-        for l in 0..p.patches.len-1:
-            var patch = p.patches[l]
+        for l in 0..p.Patches.len-1:
+            var patch = p.Patches[l]
             var fp = patch.generatePatchFile(l)
-            z.addFile(fp,p.directory &  os.DirSep & fp)
-            fileToDelete.add(p.directory &  os.DirSep & fp)
+            z.addFile(fp,p.Directory &  os.DirSep & fp)
+            fileToDelete.add(p.Directory &  os.DirSep & fp)
         z.close()
         for f in fileToDelete:
             removeFile(f)
