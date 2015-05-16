@@ -31,6 +31,8 @@ This way, libzip_all.c will be correctly compiled.
 
 *now* you can compile sy1gen by running: `nim c sygen1.nim`
 
+## UPDATE
 
+These instructions _still_ hold true for **nim** 0.11.x, with an external MingW compiler, for 64-bit processor. Just check out `sy1gen.nim` for differences. For the record, I've used the MingW distro as found and packaged here: http://nuwen.net/mingw.html
 
 
